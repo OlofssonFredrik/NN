@@ -19,6 +19,16 @@ class Node:
         
         out._backward = _backward
         return out
+    
+    def sum(self, axis=None, keepdims=False):
+        out = Node(np.sum(self.data, axis=axis, keepdims=keepdims), (self,), _op="SUM")
+
+        def _backward():
+            # Gradient of a sum operation is 1 for each element that was summed
+            self.grad += out.grad * np.ones_like(self.data)
+        
+        out._backward = _backward
+        return out
 
     def __neg__(self):
         return self * -1
@@ -48,6 +58,32 @@ class Node:
         
         out._backward = _backward
         return out
+    
+    def mean(self):
+        out = Node(np.mean(self.data), (self,), _op="MEAN")
+
+        def _backward():
+            # Gradient of the mean operation is distributed evenly
+            self.grad += out.grad * np.ones_like(self.data) / self.data.size
+        
+        out._backward = _backward
+        return out
+    
+    def index_select(self, row_indices, col_indices):
+        # Ensure that row_indices and col_indices are numpy arrays
+        row_indices = np.asarray(row_indices)
+        col_indices = np.asarray(col_indices)
+
+        selected_data = self.data[row_indices, col_indices]
+        out = Node(selected_data, (self,), _op="INDEX_SELECT")
+
+        def _backward():
+            grad = np.zeros_like(self.data)
+            np.add.at(grad, (row_indices, col_indices), out.grad)
+            self.grad += grad
+        
+        out._backward = _backward
+        return out
 
     def __truediv__(self, other):
         other = other if isinstance(other, Node) else Node(float(other))
@@ -58,6 +94,44 @@ class Node:
 
         def _backward():
             self.grad += (other * self.data ** (other- 1))*out.grad
+        
+        out._backward = _backward
+        return out
+    
+    def mean(self):
+        out = Node(np.mean(self.data), (self,), _op="MEAN")
+
+        def _backward():
+            self.grad += out.grad * (1 / self.data.size)
+        
+        out._backward = _backward
+        return out
+    
+    def exp(self):
+        out = Node(np.exp(self.data), (self,), _op="EXP")
+
+        def _backward():
+            self.grad += out.grad * np.exp(self.data)
+        
+        out._backward = _backward
+        return out
+    
+    def dot(self, other):
+        other = other if isinstance(other, Node) else Node(other)
+        out = Node(np.dot(self.data, other.data), (self, other), _op="DOT")
+
+        def _backward():
+            self.grad += np.dot(out.grad, other.data.T)
+            other.grad += np.dot(self.data.T, out.grad)
+        
+        out._backward = _backward
+        return out
+    
+    def log(self):
+        out = Node(np.log(self.data), (self,), _op="LOG")
+
+        def _backward():
+            self.grad += out.grad * (1 / self.data)
         
         out._backward = _backward
         return out
@@ -95,6 +169,10 @@ class Node:
         # go one variable at a time and applb the chain rule to get its gradient
         self.grad = 1.0
         for v in reversed(topo):
+            #print('='*50)
+            #print(v._op)
+            #print(v.grad)
+            #print(v)
             v._backward()
             
     def __repr__(self):
